@@ -140,11 +140,13 @@ mkCircuit title g = flip execState "" $ do
     let inPortName compIdx idx edge = printf "%s:in_%d_%d" (nodeName compIdx) idx edge :: String
     let outPortName compIdx edge = printf "%s:out_%d" (nodeName compIdx) edge :: String
     let removeConstInputs (Comp name ins outs) = if isJust $ stripPrefix "const" name then (Comp name UnitP outs) else (Comp name ins outs)
+    let useful (Comp _ UnitP UnitP) = False
+        useful (Comp _ _ _) = True
 
     -- augment graph with input and output node
     let (Graph g') = (genComp "ouput" :: Graph b ()) . g . genComp "input"
     let (_, comps) = execState (g' UnitP) (0, [])
-    let comps2 = map removeConstInputs comps
+    let comps2 = filter useful $ map removeConstInputs comps
     let numberedComponents = zip ints comps2
     let mapInsToNodes = flip execState Map.empty (do
                           forM_ numberedComponents (\(compNum, (Comp _ _ outs)) ->
