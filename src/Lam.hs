@@ -1,6 +1,10 @@
 {-# LANGUAGE GADTs #-}
 
 module Lam (
+    Lam (..)
+    , Val (..)
+    , simpl
+    , eval
     ) where
 
 import Prelude hiding ((.))
@@ -19,7 +23,7 @@ data Lam :: Type -> Type where
     Add :: Num a => Lam a -> Lam a -> Lam a
     Sub :: Num a => Lam a -> Lam a -> Lam a
     Mul :: Num a => Lam a -> Lam a -> Lam a
-    Abs :: String -> Lam b -> Lam (a -> b)
+    Abs :: String -> Lam b -> Lam (a -> b) -- guh! want a to be bound to name!
     App :: Lam (a -> b) -> Lam a -> Lam b
 
 instance (Show a, Num a) => Num (Lam a) where
@@ -44,13 +48,6 @@ instance Show (Lam a) where
   show (Abs n e) = parens ["Abs", n, show e]
   show (App a b) = parens ["App", show a, show b]
 
-data Val :: Type -> Type where
-    ValNum :: (Show a, Num a) => a -> Val a
-    ValFunc :: (Val a -> Val b) -> Val (a -> b)
-
-instance Show (Val a) where
-  show (ValNum x) = parens ["ValNum", show x]
-  show (ValFunc x) = parens ["ValFunc"]
 
 -- Env binds maps names to values
 type Env = M.Map String Any -- Any converts to (Val a)
@@ -84,8 +81,13 @@ simpl env (App f x) = case simpl env f of
                         Abs nm e -> let env' = bindExpr env nm x in simpl env' e
                         f' -> App f' (simpl env x)
 
-simplLam :: Env -> Lam (a -> b) -> Val (a -> b)
-simplLam env (Abs nm e) = ValFunc (\inp -> let env' = bindVal env nm inp in eval env' e)
+data Val :: Type -> Type where
+    ValNum :: (Show a, Num a) => a -> Val a
+    ValFunc :: (Val a -> Val b) -> Val (a -> b)
+
+instance Show (Val a) where
+  show (ValNum x) = parens ["ValNum", show x]
+  show (ValFunc x) = parens ["ValFunc"]
 
 getVal :: Env -> String -> Val a -> Val a
 getVal = get
@@ -107,10 +109,10 @@ eval env (Add a b) = binaryValOp (+) (eval env a) (eval env b)
 eval env (Sub a b) = binaryValOp (-) (eval env a) (eval env b)
 eval env (Mul a b) = binaryValOp (*) (eval env a) (eval env b)
 eval env (Abs nm e) = evalLam env (Abs nm e)
+  where
+    evalLam :: Env -> Lam (a -> b) -> Val (a -> b)
+    evalLam env (Abs nm e) = ValFunc (\inp -> let env' = bindVal env nm inp in eval env' e)
 eval env (App f x) = let (ValFunc f') = eval env f in f' (eval env x)
-
-evalLam :: Env -> Lam (a -> b) -> Val (a -> b)
-evalLam env (Abs nm e) = ValFunc (\inp -> let env' = bindVal env nm inp in eval env' e)
 
 l_id :: Lam (a -> a)
 l_id = "x" `Abs` Var "x"
