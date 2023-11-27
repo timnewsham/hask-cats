@@ -144,46 +144,54 @@ getTyp2 nm = do
 bindTyp2 :: String -> Typ -> State (Env Typ) ()
 bindTyp2 nm ty = modify $ M.insert nm ty
 
-unifyDown2 :: Typ -> Lam -> State (Env Typ) Lam
-unifyDown2 ty (Var ty' nm) = do
+unifyLam :: Typ -> Lam -> State (Env Typ) Lam
+unifyLam ty (Var ty' nm) = do
     nmTy <- getTyp2 nm
     let uty = ty `unify` ty' `unify` nmTy
     bindTyp2 nm uty
     return $ Var uty nm
-unifyDown2 ty (LNum ty' a) = return $ LNum (TInt `unify` ty `unify` ty') a
-unifyDown2 ty (Neg ty' a) = do
+unifyLam ty (LNum ty' a) = return $ LNum (TInt `unify` ty `unify` ty') a
+unifyLam ty (Neg ty' a) = do
     let uty = TInt `unify` ty `unify` ty' 
-    a' <- unifyDown2 uty a
+    a' <- unifyLam uty a
     return $ Neg uty a'
-unifyDown2 ty (Add ty' a b) = do
+unifyLam ty (Add ty' a b) = do
     let uty = TInt `unify` ty `unify` ty'
-    a' <- unifyDown2 uty a
-    b' <- unifyDown2 uty b
+    a' <- unifyLam uty a
+    b' <- unifyLam uty b
     return $ Add uty a' b'
-unifyDown2 ty (Sub ty' a b) =do
+unifyLam ty (Sub ty' a b) =do
     let uty = TInt `unify` ty `unify` ty'
-    a' <- unifyDown2 uty a
-    b' <- unifyDown2 uty b
+    a' <- unifyLam uty a
+    b' <- unifyLam uty b
     return $ Sub uty a' b'
-unifyDown2 ty (Mul ty' a b) = do
+unifyLam ty (Mul ty' a b) = do
     let uty = TInt `unify` ty `unify` ty'
-    a' <- unifyDown2 uty a
-    b' <- unifyDown2 uty b
+    a' <- unifyLam uty a
+    b' <- unifyLam uty b
     return $ Mul uty a' b'
-unifyDown2 ty (Abs ty' arg@(Var argTy nm) e) = shadowing nm $ do
-    bindTyp2 nm argTy
-    e' <- unifyDown2 TUnk e
+unifyLam ty (Abs ty' arg@(Var argTy nm) e) = shadowing nm $ do
+    let uty = TFun argTy TUnk `unify` ty `unify` ty'
+    bindTyp2 nm (argumentType uty)
+    e' <- unifyLam (resultType uty) e
     argTy' <- getTyp2 nm
-    arg' <- unifyDown2 TUnk arg
-    let uty = TFun (lamType arg') (lamType e') `unify` ty `unify` ty'
-    return $ Abs uty arg' e'
-unifyDown2 ty (App ty' f x) = do
+    arg' <- unifyLam TUnk arg
+    let uty' = TFun (lamType arg') (lamType e') `unify` uty
+    return $ Abs uty' arg' e'
+unifyLam ty (App ty' f x) = do
     let uty = ty `unify` ty'
-    x' <- unifyDown2 TUnk x
-    f' <- unifyDown2 (TFun (lamType x') uty) f
-    return $ App uty f' x'
+    x' <- unifyLam TUnk x
+    f' <- unifyLam (TFun (lamType x') uty) f
+    let uty' = uty `unify` resultType (lamType f')
+    return $ App uty' f' x'
 
-ud2 e = evalState (unifyDown2 TUnk e) empty
+resultType (TFun a b) = b
+resultType _ = TUnk
+
+argumentType (TFun a b) = a
+argumentType _ = TUnk
+
+typeCheck e = evalState (unifyLam TUnk e) empty
 
 main = do
     let abs nm = Abs TUnk (Var TUnk nm)
@@ -201,19 +209,20 @@ main = do
     -- let test = App (Abs "x" (var "x" `Mul` var "x")) (lnum 5)
     -- let test = Abs "x" (var "x" `Mul` var "x")
     -- \x y -> 2*x + 3*y
-    let f = "x" `abs` ("y" `abs` (lnum 2 * var "x" + lnum 3 * var "y"))
-    let test = f `app` lnum 100 `app` lnum 10
-    --let test = l_dot `app` l_double `app` l_square `app` lnum 10
+    -- let f = "x" `abs` ("y" `abs` (lnum 2 * var "x" + lnum 3 * var "y"))
+    -- let test = f
+    --let test = f `app` lnum 100 `app` lnum 10
+    let test = l_dot `app` l_double `app` l_square `app` lnum 10
     -- let test = l_bad2 -- XXX doesnt behave as expected
-    --let test = "x" `abs` ("y" `abs` (var "x" + lnum 3))
+    let test = "x" `abs` ("y" `abs` (var "x" + lnum 3))
     -- let test = "x" `abs` (var "x" + lnum 3)
-    putStr "expr: "
-    print test
-    let test' = ud2 test
-    putStrLn $ "type: " ++ showTypes test'
-    let test'' = ud2 test'
-    putStrLn $ "type: " ++ showTypes test''
+    putStrLn $ "expr: " ++ show test
+    let typed = typeCheck test
+    -- putStrLn $ "typed: " ++ showTypes typed
+    putStrLn $ "type: " ++ show (lamType typed)
 
     let test' = simpl empty test
-    putStr "simp: "
-    print test'
+    putStrLn $ "simp: " ++ show test'
+    let typed' = typeCheck test'
+    -- putStrLn $ "typed: " ++ showTypes typed'
+    putStrLn $ "type: " ++ show (lamType typed')
