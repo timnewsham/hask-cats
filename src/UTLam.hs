@@ -230,8 +230,8 @@ stlc (WFun w1 w2) (Abs _ (Var _ nm) e) = STLC.Abs nm (stlc w2 e)
 stlc WErr l = case lamType l of (TErr _ msg) -> error $ msg ++ " for " ++ show l
 stlc WUnk l = error $ "unknown type for " ++ show l
 
---withStlc :: Lam -> (STLC.Lam a -> r) -> r
---withStlc l f = withWitness (lamType l) (\w -> f (stlc w l))
+withStlc :: Lam -> (forall a. STLC.Lam a -> r) -> r
+withStlc l f = withWitness (lamType l) (\w -> f (stlc w l))
 
 main = do
     let abs nm = Abs tUnk (Var tUnk nm)
@@ -267,4 +267,6 @@ main = do
     -- putStrLn $ "typed: " ++ showTypes typed'
     putStrLn $ "type: " ++ show (lamType typed')
 
-    withWitness (lamType typed) (\w -> print $ stlc w typed)
+    --withWitness (lamType typed) (\w -> print $ stlc w typed)
+    withStlc typed print
+    withStlc typed' print
