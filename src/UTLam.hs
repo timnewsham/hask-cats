@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs, DataKinds #-}
 
 module UTLam (
     Lam (..)
@@ -13,11 +13,48 @@ import Data.List
 import qualified Data.Map as M
 import Text.Printf
 
-import qualified Lam as St
+import qualified Lam as STLC
+
+data Witness a = MkWitness
+data Unk = Unk
+data Err = Err
+
+data Lab = LErr | LUnk | LInt | LFun deriving Show
+
+data WType :: Type -> Type where
+    WErr :: WType Err
+    WUnk :: WType Unk
+    WInt :: WType Int
+    WFun :: WType a -> WType b -> WType (a->b)
+
+data Typ where
+    TErr :: WType a -> String -> Typ
+    TUnk :: WType a -> Typ
+    TInt :: WType a -> Typ
+    TFun :: WType a -> Typ -> Typ -> Typ
+
+withWitness :: Typ -> (forall a . WType a -> r) -> r
+withWitness (TErr w _) f = f w
+withWitness (TUnk w) f = f w
+withWitness (TInt w) f = f w
+withWitness (TFun w _ _) f = f w
+
+-- More convenient constructors for Typ
+tErr msg = TErr WErr msg
+tUnk = TUnk WUnk
+tInt = TInt WInt
+tFun t1 t = withWitness t1 (\w1 -> withWitness t (\w2 -> TFun (WFun w1 w2) t1 t))
+
+instance Show Typ where
+    showsPrec d (TErr _ e) = showParen (d > 0) $ showString "Terr"
+    showsPrec d (TUnk _) = showString "TUnk"
+    showsPrec d (TInt _) = showString "TInt"
+    showsPrec d (TFun _ a b) = showParen (d > 0) $ showsPrec (d+1) a . showString "->" . showsPrec (d+1) b
+
 
 data Lam where
     Var :: Typ -> String -> Lam
-    LNum :: (Show a, Num a) => Typ -> a -> Lam
+    LNum :: (Show a, Num a, Enum a) => Typ -> a -> Lam
     Neg :: Typ -> Lam -> Lam
     Add :: Typ -> Lam -> Lam -> Lam
     Sub :: Typ -> Lam -> Lam -> Lam
@@ -26,11 +63,11 @@ data Lam where
     App :: Typ -> Lam -> Lam -> Lam
 
 instance Num Lam where
-    fromInteger = LNum TUnk . fromInteger
-    negate = Neg TUnk
-    (+) = Add TUnk
-    (-) = Sub TUnk
-    (*) = Mul TUnk
+    fromInteger = LNum tUnk . fromInteger
+    negate = Neg tUnk
+    (+) = Add tUnk
+    (-) = Sub tUnk
+    (*) = Mul tUnk
     abs = error "no abs"
     signum = error "no signum"
 
@@ -90,27 +127,16 @@ simpl env (App ty f x) = case simpl env f of
                             Abs ty (Var _ nm) e -> let env' = bindExpr env nm x in simpl env' e
                             f' -> App ty f' (simpl env x)
 
-data Typ where
-    TErr :: String -> Typ
-    TUnk :: Typ
-    TInt :: Typ
-    TFun :: Typ -> Typ -> Typ
-
-instance Show Typ where
-    showsPrec d (TErr e) = showParen (d > 0) $ showString "Terr"
-    showsPrec d TUnk = showString "TUnk"
-    showsPrec d TInt = showString "TInt"
-    showsPrec d (TFun a b) = showParen (d > 0) $ showsPrec (d+1) a . showString "->" . showsPrec (d+1) b
-
 unify :: Typ -> Typ -> Typ
-unify (TErr e) _ = TErr e
-unify _ (TErr e) = TErr e
-unify TUnk b = b
-unify b TUnk = b
-unify TInt TInt = TInt
-unify (TFun a b) (TFun a' b') = TFun (unify a a') (unify b b')
-unify a a' = TErr $ printf "unify: %s is not %s" (show a) (show a')
-
+unify a@(TErr w e) _ = a
+unify _ b@(TErr w e) = b
+unify (TUnk w) b = b
+unify a (TUnk w) = a
+unify a@(TInt wa) (TInt wb) = a
+unify (TFun w a b) (TFun w' a' b') = tFun aa' bb'
+    where aa' = unify a a'
+          bb' = unify b b'
+unify a a' = tErr $ printf "unify: %s is not %s" (show a) (show a')
 
 getTyp :: Env Typ -> String -> Typ -> Typ
 getTyp = getEnv
@@ -139,7 +165,7 @@ shadowing nm prog = do
 getTyp2 :: String -> State (Env Typ) Typ
 getTyp2 nm = do
     env <- get
-    return $ getTyp env nm TUnk
+    return $ getTyp env nm tUnk
 
 bindTyp2 :: String -> Typ -> State (Env Typ) ()
 bindTyp2 nm ty = modify $ M.insert nm ty
@@ -150,54 +176,68 @@ unifyLam ty (Var ty' nm) = do
     let uty = ty `unify` ty' `unify` nmTy
     bindTyp2 nm uty
     return $ Var uty nm
-unifyLam ty (LNum ty' a) = return $ LNum (TInt `unify` ty `unify` ty') a
+unifyLam ty (LNum ty' a) = return $ LNum (tInt `unify` ty `unify` ty') a
 unifyLam ty (Neg ty' a) = do
-    let uty = TInt `unify` ty `unify` ty' 
+    let uty = tInt `unify` ty `unify` ty' 
     a' <- unifyLam uty a
     return $ Neg uty a'
 unifyLam ty (Add ty' a b) = do
-    let uty = TInt `unify` ty `unify` ty'
+    let uty = tInt `unify` ty `unify` ty'
     a' <- unifyLam uty a
     b' <- unifyLam uty b
     return $ Add uty a' b'
 unifyLam ty (Sub ty' a b) =do
-    let uty = TInt `unify` ty `unify` ty'
+    let uty = tInt `unify` ty `unify` ty'
     a' <- unifyLam uty a
     b' <- unifyLam uty b
     return $ Sub uty a' b'
 unifyLam ty (Mul ty' a b) = do
-    let uty = TInt `unify` ty `unify` ty'
+    let uty = tInt `unify` ty `unify` ty'
     a' <- unifyLam uty a
     b' <- unifyLam uty b
     return $ Mul uty a' b'
 unifyLam ty (Abs ty' arg@(Var argTy nm) e) = shadowing nm $ do
-    let uty = TFun argTy TUnk `unify` ty `unify` ty'
+    let uty = tFun argTy tUnk `unify` ty `unify` ty'
     bindTyp2 nm (argumentType uty)
     e' <- unifyLam (resultType uty) e
     argTy' <- getTyp2 nm
-    arg' <- unifyLam TUnk arg
-    let uty' = TFun (lamType arg') (lamType e') `unify` uty
+    arg' <- unifyLam tUnk arg
+    let uty' = tFun (lamType arg') (lamType e') `unify` uty
     return $ Abs uty' arg' e'
 unifyLam ty (App ty' f x) = do
     let uty = ty `unify` ty'
-    x' <- unifyLam TUnk x
-    f' <- unifyLam (TFun (lamType x') uty) f
+    x' <- unifyLam tUnk x
+    f' <- unifyLam (tFun (lamType x') uty) f
     let uty' = uty `unify` resultType (lamType f')
     return $ App uty' f' x'
 
-resultType (TFun a b) = b
-resultType _ = TUnk
+resultType (TFun w a b) = b
+resultType _ = tUnk
 
-argumentType (TFun a b) = a
-argumentType _ = TUnk
+argumentType (TFun w a b) = a
+argumentType _ = tUnk
 
-typeCheck e = evalState (unifyLam TUnk e) empty
+typeCheck e = evalState (unifyLam tUnk e) empty
+
+stlc :: WType a -> Lam -> STLC.Lam a
+stlc _ (Var ty nm) = STLC.Var nm
+stlc WInt (LNum ty x) = STLC.LNum $ fromEnum x
+stlc WInt (Neg ty e) = STLC.Neg (stlc WInt e)
+stlc WInt (Add ty e1 e2) = STLC.Add (stlc WInt e1) (stlc WInt e2)
+stlc WInt (Sub ty e1 e2) = STLC.Add (stlc WInt e1) (stlc WInt e2)
+stlc WInt (Mul ty e1 e2) = STLC.Add (stlc WInt e1) (stlc WInt e2)
+stlc (WFun w1 w2) (Abs _ (Var _ nm) e) = STLC.Abs nm (stlc w2 e)
+stlc WErr l = case lamType l of (TErr _ msg) -> error $ msg ++ " for " ++ show l
+stlc WUnk l = error $ "unknown type for " ++ show l
+
+--withStlc :: Lam -> (STLC.Lam a -> r) -> r
+--withStlc l f = withWitness (lamType l) (\w -> f (stlc w l))
 
 main = do
-    let abs nm = Abs TUnk (Var TUnk nm)
-    let app = App TUnk
-    let var = Var TUnk
-    let lnum = LNum TUnk
+    let abs nm = Abs tUnk (Var tUnk nm)
+    let app = App tUnk
+    let var = Var tUnk
+    let lnum = LNum tUnk
     let l_id = "x" `abs` var "x"
     let l_dot = "f" `abs` ("g" `abs` ("x" `abs` (var "f" `app` (var "g" `app` var "x"))))
     let l_double = "x" `abs` (var "x" + var "x")
@@ -226,3 +266,5 @@ main = do
     let typed' = typeCheck test'
     -- putStrLn $ "typed: " ++ showTypes typed'
     putStrLn $ "type: " ++ show (lamType typed')
+
+    withWitness (lamType typed) (\w -> print $ stlc w typed)
