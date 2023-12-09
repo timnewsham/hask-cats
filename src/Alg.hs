@@ -5,7 +5,13 @@ module Alg (
     , Zero(..)
     , One(..)
     , Prod(..)
+    , exl
+    , exr
+    , prodMap
+    , swap
     , CoProd(..)
+    , uncoprod
+    , coswap
   ) where
 
 -- Iso is a proof that two things are isomorphic.
@@ -28,16 +34,21 @@ data One = One deriving Show
 -- Prod is associative and its unit is One.
 data Prod a b = a :* b deriving Show
 
+exl :: Prod a b -> a
+exl (x :* y) = x
+
+exr :: Prod a b -> b
+exr (x :* y) = y
+
+prodMap :: (a -> c) -> (b -> d) -> Prod a b -> Prod c d
+prodMap l r (x :* y) = l x :* r y
+
 -- One is a unit for products.
 prodUnitLeft :: Iso a (Prod One a)
-prodUnitLeft = IsoProof{ isoAB = unitLeft, isoBA = unUnitLeft }
-  where unitLeft x = One :* x
-        unUnitLeft (One :* x) = x
+prodUnitLeft = IsoProof{ isoAB = (One :*), isoBA = exr }
 
 prodUnitRight :: Iso a (Prod a One)
-prodUnitRight = IsoProof{ isoAB = unitRight, isoBA = unUnitRight }
-  where unitRight x = x :* One
-        unUnitRight (x :* One) = x
+prodUnitRight = IsoProof{ isoAB = (:* One), isoBA = exl }
 
 -- swapped products are isomorphic.
 swapIso :: Iso (Prod a b) (Prod b a)
@@ -67,26 +78,17 @@ uncoprod l r (InR x) = r x
 
 -- Zero is a unit for CoProd.
 coprodUnitLeft :: Iso a (CoProd Zero a)
-coprodUnitLeft = IsoProof{ isoAB = unitLeft, isoBA = unUnitLeft }
-  where unitLeft = InR
-        unUnitLeft = uncoprod absurd id
-        -- unUnitLeft = (InL zero) = absurd zero
-        -- unUnitLeft (InR x) = x
+coprodUnitLeft = IsoProof{ isoAB = InR, isoBA = uncoprod absurd id }
 
 coprodUnitRight :: Iso a (CoProd a Zero)
-coprodUnitRight = IsoProof{ isoAB = unitRight, isoBA = unUnitRight }
-  where unitRight = InL
-        unUnitRight = uncoprod id absurd
-        -- unUnitRight (InL x) = x
-        -- unUnitRight (InR zero) = absurd zero
+coprodUnitRight = IsoProof{ isoAB = InL, isoBA = uncoprod id absurd }
 
 -- Swapped coproducts are isomorphic.
 coswapIso :: Iso (CoProd a b) (CoProd b a)
 coswapIso = IsoProof { isoAB = coswap, isoBA = coswap }
 
 coswap :: CoProd a b -> CoProd b a
-coswap (InL x) = InR x
-coswap (InR x) = InL x
+coswap = uncoprod InR InL
 
 -- coproducts are associative.
 coprodAssoc :: Iso (CoProd (CoProd a b) c) (CoProd a (CoProd b c))
@@ -106,5 +108,4 @@ coprodLAssoc (InR (InR x)) = InR x
 main = do
     print One
     print $ False :* True
-
 
