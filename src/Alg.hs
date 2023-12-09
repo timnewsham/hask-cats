@@ -1,4 +1,4 @@
-{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- Type algebra.
 module Alg (
@@ -29,7 +29,7 @@ data Zero
 -- absurd proves anything from a Zero.
 -- ex falso quod libet, when pigs fly, etc..
 absurd :: Zero -> a
-absurd z = case z of {}
+absurd = \case
 
 -- One has a single element. It carries no data.
 data One = One deriving Show
