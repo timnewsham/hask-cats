@@ -1,3 +1,4 @@
+{-# LANGUAGE EmptyCase #-}
 
 -- Type algebra.
 module Alg (
@@ -16,14 +17,17 @@ module Alg (
 
 -- Iso is a proof that two things are isomorphic.
 -- It allows lossly conversion between two types.
-data Iso a b = IsoProof {
-    isoAB :: a -> b
-    , isoBA :: b -> a
-  }
+data Iso a b = IsoProof { isoAB :: a -> b , isoBA :: b -> a }
+
+-- Iso a b is symmetric.
+sym :: Iso a b -> Iso b a
+sym (IsoProof ab ba) = IsoProof ba ab
 
 -- Zero is uninhabited
-data Zero deriving Show
+data Zero
 
+-- absurd proves anything from a Zero.
+-- ex falso quod libet, when pigs fly, etc..
 absurd :: Zero -> a
 absurd z = case z of {}
 
@@ -42,6 +46,12 @@ exr (x :* y) = y
 
 prodMap :: (a -> c) -> (b -> d) -> Prod a b -> Prod c d
 prodMap l r (x :* y) = l x :* r y
+
+left :: (a -> c) -> Prod a b -> Prod c b
+left f = prodMap f id
+
+right :: (b -> c) -> Prod a b -> Prod a c
+right f = prodMap id f
 
 -- One is a unit for products.
 prodUnitLeft :: Iso a (Prod One a)
@@ -66,6 +76,13 @@ prodRAssoc ((x :* y) :* z) = (x :* (y :* z))
 
 prodLAssoc :: Prod a (Prod b c) -> Prod (Prod a b) c
 prodLAssoc (x :* (y :* z)) = ((x :* y) :* z)
+
+-- product with zero is zero
+prodZeroLeft :: Iso (Prod Zero a) Zero
+prodZeroLeft = IsoProof { isoAB = exl, isoBA = absurd }
+
+prodZeroRight :: Iso (Prod a Zero) Zero
+prodZeroRight = IsoProof { isoAB = exr, isoBA = absurd }
 
 -- CoProd or sum of a and b, a discriminated union of a and b.
 -- CoProd is associative and its unit is Zero.
@@ -104,8 +121,14 @@ coprodLAssoc (InL x) = InL (InL x)
 coprodLAssoc (InR (InL x)) = InL (InR x)
 coprodLAssoc (InR (InR x)) = InR x
 
+-- Prod distributes over coproducts (sums).
+-- a :* (b :+ c) == (a :* b) :+ (a :* c)
+distr :: Iso (Prod a (CoProd b c)) (CoProd (Prod a b) (Prod a c))
+distr = IsoProof isoAB isoBA
+  where isoAB (x :* sum) = uncoprod (InL . (x :*)) (InR . (x :*)) sum
+        isoBA = uncoprod (right InL) (right InR)
+
 --
 main = do
     print One
     print $ False :* True
-
