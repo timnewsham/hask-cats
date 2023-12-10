@@ -15,6 +15,8 @@ module Alg (
     , uncoprod
   ) where
 
+import Prelude hiding ((.), id)
+
 -- Iso is a proof that two things are isomorphic.
 -- It allows lossly conversion between two types.
 data Iso a b = IsoProof { isoAB :: a -> b , isoBA :: b -> a }
@@ -33,6 +35,16 @@ absurd = \case
 
 -- One has a single element. It carries no data.
 data One = One deriving Show
+
+-- Cat is a category.
+-- I'm using unusual names here to avoid conflict.
+class Cat k where
+    id :: a `k` a
+    (.) :: (b `k` c) -> (a `k` b) -> (a `k` c)
+
+instance Cat (->) where
+    id x = x
+    (.) g f x = g (f x)
 
 -- Bifunctor is a functor over a cartesian product of two functors.
 -- Here bimap is defined as taking two functions, but
@@ -63,6 +75,17 @@ destroyProd (x :* One) = x
 
 instance Bifunctor Prod where
   bimap l r (x :* y) = l x :* r y
+
+-- bimapProd wraps up bimap's function into a single
+-- object that is a pair of functions.
+bimapProd :: Bifunctor f => Prod (a -> a') (b -> b') -> (f a b -> f a' b')
+bimapProd (l :* r) = bimap l r
+
+identProd :: Prod (a -> a) (b -> b)
+identProd = id :* id
+
+compProd :: Prod (a' -> a'') (b' -> b'') -> Prod (a -> a') (b -> b') -> Prod (a -> a'') (b -> b'')
+compProd (g :* g') (f :* f') = (g . f) :* (g' . f')
 
 exl, exl' :: Prod a b -> a
 exl (x :* y) = x
