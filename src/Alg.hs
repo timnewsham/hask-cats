@@ -21,9 +21,18 @@ import Prelude hiding ((.), id)
 -- It allows lossly conversion between two types.
 data Iso a b = IsoProof { isoAB :: a -> b , isoBA :: b -> a }
 
--- Iso a b is symmetric.
-sym :: Iso a b -> Iso b a
-sym (IsoProof ab ba) = IsoProof ba ab
+-- Swappable things can have their type args swapped.
+-- They are symmetrical
+class Swap f where
+  swap :: f a b -> f b a
+
+-- Swappable things are symmetrical.
+swapIso :: Swap f => Iso (f a b) (f b a)
+swapIso = IsoProof { isoAB = swap, isoBA = swap }
+
+-- Iso is symmetrical.
+instance Swap Iso where
+  swap (IsoProof ab ba) = IsoProof ba ab
 
 -- Zero is uninhabited
 data Zero
@@ -58,13 +67,6 @@ left f = bimap f id
 right :: Bifunctor f => (b -> c) -> f a b -> f a c
 right f = bimap id f
 
-class Swap f where
-  swap :: f a b -> f b a
-
--- swapped bifunctors are isomorphic.
-swapIso :: Swap f => Iso (f a b) (f b a)
-swapIso = IsoProof { isoAB = swap, isoBA = swap }
-
 -- Prod carries two elements.
 -- Prod is associative and its unit is One.
 data Prod a b = a :* b deriving Show
@@ -81,9 +83,11 @@ instance Bifunctor Prod where
 bimapProd :: Bifunctor f => Prod (a -> a') (b -> b') -> (f a b -> f a' b')
 bimapProd (l :* r) = bimap l r
 
+-- There's an identity Prod of functions.
 identProd :: Prod (a -> a) (b -> b)
 identProd = id :* id
 
+-- Prods of functions can be composed.
 compProd :: Prod (a' -> a'') (b' -> b'') -> Prod (a -> a') (b -> b') -> Prod (a -> a'') (b -> b'')
 compProd (g :* g') (f :* f') = (g . f) :* (g' . f')
 
@@ -102,7 +106,7 @@ prodUnitLeft = IsoProof{ isoAB = (One :*), isoBA = exr }
 prodUnitRight :: Iso a (Prod a One)
 prodUnitRight = IsoProof{ isoAB = (:* One), isoBA = exl }
 
--- Swapped Products are isomorphic.
+-- Products are symmetrical.
 instance Swap Prod where
   -- swap :: Prod a b -> Prod b a
   swap (x :* y) = (y :* x)
@@ -151,7 +155,7 @@ coprodUnitLeft = IsoProof{ isoAB = InR, isoBA = uncoprod absurd id }
 coprodUnitRight :: Iso a (CoProd a Zero)
 coprodUnitRight = IsoProof{ isoAB = InL, isoBA = uncoprod id absurd }
 
--- Swapped CoProducts are isomorphic.
+-- CoProducts are symmetrical.
 instance Swap CoProd where
   --swap :: CoProd a b -> CoProd b a
   swap = uncoprod InR InL
